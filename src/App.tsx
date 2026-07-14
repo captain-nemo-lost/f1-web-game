@@ -15,6 +15,8 @@ export default function App() {
   const highScore = useTransitionStore((state) => state.highScore);
   const resetGame = useTransitionStore((state) => state.resetGame);
   const returnToHome = useTransitionStore((state) => state.returnToHome);
+  const controlMode = useTransitionStore((state) => state.controlMode);
+  const setControlMode = useTransitionStore((state) => state.setControlMode);
 
   return (
     <div className="w-screen h-screen bg-[#080808] overflow-hidden relative selection:bg-[#E10600] selection:text-white font-mono">
@@ -83,9 +85,31 @@ export default function App() {
             transition={{ delay: 0.4 }}
             className="flex flex-col items-center"
           >
-            <p className="text-white/70 text-lg mb-8 uppercase tracking-widest">
+            <p className="text-white/70 text-lg mb-4 uppercase tracking-widest">
               Final Score: <span className="text-white font-bold text-2xl ml-2">{coins}</span>
             </p>
+
+            <div className="flex items-center gap-4 mb-8 bg-black/50 p-2 rounded-md border border-white/10">
+              <span className="text-white/50 text-xs font-bold uppercase tracking-widest">Controls:</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setControlMode('mouse')}
+                  className={`px-4 py-1 text-xs font-bold uppercase tracking-wider rounded transition-colors ${
+                    controlMode === 'mouse' ? 'bg-[#E10600] text-white' : 'text-white/50 hover:text-white'
+                  }`}
+                >
+                  Mouse
+                </button>
+                <button
+                  onClick={() => setControlMode('keyboard')}
+                  className={`px-4 py-1 text-xs font-bold uppercase tracking-wider rounded transition-colors ${
+                    controlMode === 'keyboard' ? 'bg-[#E10600] text-white' : 'text-white/50 hover:text-white'
+                  }`}
+                >
+                  Keyboard
+                </button>
+              </div>
+            </div>
             
             <div className="flex gap-4">
               <button 

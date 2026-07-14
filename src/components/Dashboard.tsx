@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTransitionStore } from '../store/useTransitionStore';
-import { Trophy, Settings, HelpCircle, ChevronRight, Flag } from 'lucide-react';
+import { Trophy, HelpCircle, ChevronRight, Flag, Gamepad2, Mouse, Keyboard, X } from 'lucide-react';
 
 export default function Dashboard() {
   const isSceneLoaded = useTransitionStore((state) => state.isSceneLoaded);
@@ -10,6 +11,11 @@ export default function Dashboard() {
   const coins = useTransitionStore((state) => state.coins);
   const isInspectMode = useTransitionStore((state) => state.isInspectMode);
   const exitInspectMode = useTransitionStore((state) => state.exitInspectMode);
+  
+  const controlMode = useTransitionStore((state) => state.controlMode);
+  const setControlMode = useTransitionStore((state) => state.setControlMode);
+  const [showControlsMenu, setShowControlsMenu] = useState(false);
+  const [showHowToPlay, setShowHowToPlay] = useState(false);
 
   // If the scene isn't loaded yet, show a simple loading state
   if (!isSceneLoaded) {
@@ -117,21 +123,80 @@ export default function Dashboard() {
               </button>
 
               <div className="grid grid-cols-3 gap-3">
-                <button className="flex flex-col items-center justify-center gap-2 p-3 bg-black/40 border border-white/10 hover:border-white/30 rounded-md transition-colors group">
-                  <HelpCircle className="w-5 h-5 text-white/50 group-hover:text-white" />
+                <button 
+                  onClick={() => setShowHowToPlay(true)}
+                  className="flex flex-col items-center justify-center gap-2 p-3 bg-black/40 border border-white/10 hover:border-[#E10600] rounded-md transition-colors group"
+                >
+                  <HelpCircle className="w-5 h-5 text-white/50 group-hover:text-[#E10600] transition-colors" />
                   <span className="text-[10px] font-bold text-white/50 group-hover:text-white uppercase tracking-wider">How to Play</span>
                 </button>
                 <button className="flex flex-col items-center justify-center gap-2 p-3 bg-black/40 border border-white/10 hover:border-white/30 rounded-md transition-colors group">
                   <Trophy className="w-5 h-5 text-white/50 group-hover:text-white" />
                   <span className="text-[10px] font-bold text-white/50 group-hover:text-white uppercase tracking-wider">Leaderboard</span>
                 </button>
-                <button className="flex flex-col items-center justify-center gap-2 p-3 bg-black/40 border border-white/10 hover:border-white/30 rounded-md transition-colors group">
-                  <Settings className="w-5 h-5 text-white/50 group-hover:text-white" />
-                  <span className="text-[10px] font-bold text-white/50 group-hover:text-white uppercase tracking-wider">Settings</span>
+                <button 
+                  onClick={() => setShowControlsMenu(true)}
+                  className="flex flex-col items-center justify-center gap-2 p-3 bg-black/40 border border-white/10 hover:border-[#E10600] rounded-md transition-colors group"
+                >
+                  <Gamepad2 className="w-5 h-5 text-white/50 group-hover:text-[#E10600] transition-colors" />
+                  <span className="text-[10px] font-bold text-white/50 group-hover:text-white uppercase tracking-wider">Controls</span>
                 </button>
               </div>
             </motion.div>
           </div>
+
+          {/* How to Play Overlay */}
+          <AnimatePresence>
+            {showHowToPlay && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-[100] flex items-center justify-center pointer-events-auto bg-black/60 backdrop-blur-md p-4"
+              >
+                <motion.div 
+                  initial={{ scale: 0.9, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.9, y: 20 }}
+                  className="bg-[#0a0a0a] border border-[#333] rounded-lg p-8 w-full max-w-lg relative shadow-2xl"
+                >
+                  <button 
+                    onClick={() => setShowHowToPlay(false)}
+                    className="absolute top-4 right-4 text-white/50 hover:text-white transition-colors"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+
+                  <h2 className="text-3xl font-black text-white italic tracking-widest uppercase mb-2">How to Play</h2>
+                  <p className="text-white/50 text-sm tracking-widest uppercase mb-6">Master the velocity</p>
+
+                  <div className="flex flex-col gap-4 mb-8">
+                    <div className="p-4 bg-black/50 border border-white/10 rounded-md">
+                      <h3 className="text-[#E10600] font-bold tracking-widest uppercase mb-1">Drive & Steer</h3>
+                      <p className="text-white/60 text-sm">Use your mouse or arrow keys to steer left and right. The car accelerates automatically.</p>
+                    </div>
+                    <div className="p-4 bg-black/50 border border-white/10 rounded-md">
+                      <h3 className="text-[#E10600] font-bold tracking-widest uppercase mb-1">Collect Coins</h3>
+                      <p className="text-white/60 text-sm">Steer into the golden holographic coins to increase your score.</p>
+                    </div>
+                    <div className="p-4 bg-black/50 border border-white/10 rounded-md">
+                      <h3 className="text-[#E10600] font-bold tracking-widest uppercase mb-1">Dodge Obstacles</h3>
+                      <p className="text-white/60 text-sm">Avoid the energy crates. Hitting an obstacle will destroy the car and end your run.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-center">
+                    <button 
+                      onClick={() => setShowHowToPlay(false)}
+                      className="px-8 py-3 bg-white text-black font-bold uppercase tracking-widest hover:bg-[#E10600] hover:text-white transition-colors duration-300"
+                    >
+                      Got it
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Inspect Mode Overlay */}
           <AnimatePresence>
@@ -155,6 +220,82 @@ export default function Dashboard() {
                     Drag to Rotate
                   </span>
                 </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Controls Menu Overlay */}
+          <AnimatePresence>
+            {showControlsMenu && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-[100] flex items-center justify-center pointer-events-auto bg-black/60 backdrop-blur-md p-4"
+              >
+                <motion.div 
+                  initial={{ scale: 0.9, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.9, y: 20 }}
+                  className="bg-[#0a0a0a] border border-[#333] rounded-lg p-8 w-full max-w-2xl relative shadow-2xl"
+                >
+                  <button 
+                    onClick={() => setShowControlsMenu(false)}
+                    className="absolute top-4 right-4 text-white/50 hover:text-white transition-colors"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+
+                  <h2 className="text-3xl font-black text-white italic tracking-widest uppercase mb-2">Control Options</h2>
+                  <p className="text-white/50 text-sm tracking-widest uppercase mb-8">Select your driving input method</p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    {/* Mouse Card */}
+                    <div 
+                      onClick={() => setControlMode('mouse')}
+                      className={`relative flex flex-col items-center p-6 rounded-md cursor-pointer transition-all duration-300 ${
+                        controlMode === 'mouse' 
+                          ? 'bg-[#E10600]/10 border-2 border-[#E10600] shadow-[0_0_20px_rgba(225,6,0,0.2)]' 
+                          : 'bg-black/50 border border-white/10 hover:border-white/30'
+                      }`}
+                    >
+                      {controlMode === 'mouse' && (
+                        <div className="absolute top-3 right-3 w-2 h-2 rounded-full bg-[#E10600] animate-pulse" />
+                      )}
+                      <Mouse className={`w-12 h-12 mb-4 ${controlMode === 'mouse' ? 'text-[#E10600]' : 'text-white/30'}`} />
+                      <h3 className="text-xl font-bold text-white tracking-widest uppercase mb-1">Advanced</h3>
+                      <span className={`text-[10px] uppercase tracking-[0.2em] font-bold ${controlMode === 'mouse' ? 'text-[#E10600]' : 'text-white/50'}`}>Mouse Input</span>
+                      <p className="text-white/40 text-xs text-center mt-4">Analog steering. Follows pointer for smooth, precise banking and high-speed cornering.</p>
+                    </div>
+
+                    {/* Keyboard Card */}
+                    <div 
+                      onClick={() => setControlMode('keyboard')}
+                      className={`relative flex flex-col items-center p-6 rounded-md cursor-pointer transition-all duration-300 ${
+                        controlMode === 'keyboard' 
+                          ? 'bg-[#E10600]/10 border-2 border-[#E10600] shadow-[0_0_20px_rgba(225,6,0,0.2)]' 
+                          : 'bg-black/50 border border-white/10 hover:border-white/30'
+                      }`}
+                    >
+                      {controlMode === 'keyboard' && (
+                        <div className="absolute top-3 right-3 w-2 h-2 rounded-full bg-[#E10600] animate-pulse" />
+                      )}
+                      <Keyboard className={`w-12 h-12 mb-4 ${controlMode === 'keyboard' ? 'text-[#E10600]' : 'text-white/30'}`} />
+                      <h3 className="text-xl font-bold text-white tracking-widest uppercase mb-1">Classic</h3>
+                      <span className={`text-[10px] uppercase tracking-[0.2em] font-bold ${controlMode === 'keyboard' ? 'text-[#E10600]' : 'text-white/50'}`}>Arrow Keys / A.D</span>
+                      <p className="text-white/40 text-xs text-center mt-4">Digital steering. Instant left/right inputs with smoothed interpolation for arcade feel.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-center">
+                    <button 
+                      onClick={() => setShowControlsMenu(false)}
+                      className="px-8 py-3 bg-white text-black font-bold uppercase tracking-widest hover:bg-[#E10600] hover:text-white transition-colors duration-300"
+                    >
+                      Confirm
+                    </button>
+                  </div>
+                </motion.div>
               </motion.div>
             )}
           </AnimatePresence>

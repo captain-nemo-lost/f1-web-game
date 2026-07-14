@@ -57,12 +57,20 @@ export default function FormulaCar() {
     }
 
     // Brake lights logic
-    const targetIntensity = brakeLightsActive ? 15 : 0; // Extremely bright for bloom
+    // Brake lights logic: Base glow + bright on steer/brake
+    const steerAggression = Math.abs(_state.pointer.x);
+    let targetIntensity = 2; // Idle base glow
+    if (brakeLightsActive) {
+      targetIntensity = 20; // Full braking
+    } else if (steerAggression > 0.4 && hasStartedGame) {
+      targetIntensity = 5 + (steerAggression * 10); // Dynamic cornering traction
+    }
+
     if (brakeLightLeft.current) {
-      brakeLightLeft.current.intensity = THREE.MathUtils.lerp(brakeLightLeft.current.intensity, targetIntensity, delta * 15);
+      brakeLightLeft.current.intensity = THREE.MathUtils.lerp(brakeLightLeft.current.intensity, targetIntensity, delta * 10);
     }
     if (brakeLightRight.current) {
-      brakeLightRight.current.intensity = THREE.MathUtils.lerp(brakeLightRight.current.intensity, targetIntensity, delta * 15);
+      brakeLightRight.current.intensity = THREE.MathUtils.lerp(brakeLightRight.current.intensity, targetIntensity, delta * 10);
     }
   });
 

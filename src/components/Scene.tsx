@@ -1,7 +1,8 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Environment, MeshReflectorMaterial, OrbitControls } from '@react-three/drei';
+import { Environment, OrbitControls, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing';
+import { applyCurvedWorld, injectCurvedWorld } from '../utils/shaders';
 import { BlendFunction } from 'postprocessing';
 import * as THREE from 'three';
 import gsap from 'gsap';
@@ -45,6 +46,107 @@ export default function Scene() {
   const [orbitActive, setOrbitActive] = useState(false);
   const initialSlideRef = useRef(30); // Start 30 units deep in the background
 
+  // Keyboard controls state
+  const leftPressed = useRef(false);
+  const rightPressed = useRef(false);
+  const virtualPointer = useRef(0);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') leftPressed.current = true;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') rightPressed.current = true;
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') leftPressed.current = false;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') rightPressed.current = false;
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Generate fine asphalt/grain noise texture for the road
+  const noiseTex = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      for (let x = 0; x < 256; x++) {
+        for (let y = 0; y < 256; y++) {
+          const v = Math.floor(Math.random() * 255);
+          ctx.fillStyle = `rgb(${v},${v},${v})`;
+          ctx.fillRect(x, y, 1, 1);
+        }
+      }
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(20, 200); // Stretch along the long road
+    return tex;
+  }, []);
+
+
+  // Cleanup texture on unmount to prevent WebGL Context Lost during HMR
+  useEffect(() => {
+    return () => {
+      noiseTex.dispose();
+    };
+  }, [noiseTex]);
+
+  const applyCurvedBuilding = (material: THREE.Material) => {
+    material.onBeforeCompile = (shader) => {
+      injectCurvedWorld(shader);
+      
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <common>',
+        `
+        #include <common>
+        varying vec3 vWorldPos;
+        `
+      );
+      
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <worldpos_vertex>',
+        `
+        #include <worldpos_vertex>
+        vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        `
+      );
+
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <common>',
+        `
+        #include <common>
+        varying vec3 vWorldPos;
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        `
+      );
+
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        `
+        #include <emissivemap_fragment>
+        
+        vec2 gridPos = vec2(floor(vWorldPos.x * 0.4 + vWorldPos.z * 0.4), floor(vWorldPos.y * 0.4));
+        vec2 localFract = vec2(fract(vWorldPos.x * 0.4 + vWorldPos.z * 0.4), fract(vWorldPos.y * 0.4));
+        
+        if (localFract.x > 0.2 && localFract.x < 0.8 && localFract.y > 0.2 && localFract.y < 0.8) {
+          float n = hash(gridPos);
+          if (n > 0.85) { // sparse windows
+            vec3 winColor = n > 0.98 ? vec3(1.0, 0.2, 0.2) : (n > 0.95 ? vec3(1.0, 0.7, 0.4) : vec3(0.9, 0.95, 1.0));
+            totalEmissiveRadiance += winColor * 2.0;
+          }
+        }
+        `
+      );
+    };
+  };
+
   // Mark scene as loaded when this component successfully mounts
   useEffect(() => {
     setSceneLoaded();
@@ -63,7 +165,7 @@ export default function Scene() {
       coinsRef.current.forEach((coin, i) => {
         const isLeft = Math.random() > 0.5;
         coin.position.set(isLeft ? -2.5 : 2.5, 1.2, -100 - (i * 80));
-        coin.userData = { collected: false };
+        coin.userData.collected = false;
         coin.visible = true;
       });
       // Reset obstacles
@@ -182,8 +284,8 @@ export default function Scene() {
       tl.to(garageGroup.current.scale, { x: 0, y: 0, z: 0, duration: 0.1 }, 14.5); // Hide after passing camera
     }
 
-    // 13.8s: Track appears (Car crosses the wall threshold)
-    tl.call(() => { if (envGroup.current) envGroup.current.visible = true; }, undefined, 13.8);
+    // 11.8s: Track appears behind the opening garage door
+    tl.call(() => { if (envGroup.current) envGroup.current.visible = true; }, undefined, 11.8);
 
     // Speed Ramp for Track
     gsap.to({ val: 0 }, {
@@ -207,45 +309,101 @@ export default function Scene() {
     };
   }, [camera, hasStartedGame]);
 
-  // Build Geometry (Curbs, Dust, Burnout Smoke)
+  // Build Geometry (Curbs, Dust, Burnout Smoke, Pillars)
   useEffect(() => {
-    // 1. Flat painted curbs
-    const curbGeo = new THREE.BoxGeometry(1.2, 0.05, 3.0);
-    const redCurbMat = new THREE.MeshBasicMaterial({ color: '#cc0000' });
-    const TRACK_WIDTH = 6.0; // Increased width
+    const TRACK_WIDTH = 8.0; // Increased width
 
-    for (let i = 0; i < 60; i++) {
-      const lCurb = new THREE.Mesh(curbGeo, redCurbMat);
-      lCurb.position.set(TRACK_WIDTH, 0.025, i * 5 - 150);
-      curbsRef.current.push(lCurb);
-      if (envGroup.current) envGroup.current.add(lCurb);
+    // 1. Heavy Guardrails with Embedded LEDs
+    const railGeo = new THREE.BoxGeometry(1.0, 1.2, 4.0, 1, 1, 4);
+    const railMat = new THREE.MeshStandardMaterial({ color: '#222', metalness: 0.9, roughness: 0.1 });
+    const ledGeo = new THREE.BoxGeometry(1.05, 0.15, 4.0, 1, 1, 4);
+    const ledMat = new THREE.MeshStandardMaterial({
+      color: '#ff0000',
+      emissive: '#ff0000',
+      emissiveIntensity: 3.0 // Reduced from 10 to prevent massive screen bloom
+    });
+    applyCurvedWorld(railMat);
+    applyCurvedWorld(ledMat);
 
-      const rCurb = new THREE.Mesh(curbGeo, redCurbMat);
-      rCurb.position.set(-TRACK_WIDTH, 0.025, i * 5 - 150);
-      curbsRef.current.push(rCurb);
-      if (envGroup.current) envGroup.current.add(rCurb);
+    const createGuardrail = (isLeft: boolean, zPos: number) => {
+      const group = new THREE.Group() as any;
+      const rail = new THREE.Mesh(railGeo, railMat);
+      rail.position.y = 0.6;
+      group.add(rail);
+
+      const led = new THREE.Mesh(ledGeo, ledMat);
+      led.position.y = 0.8;
+      group.add(led);
+
+      const sign = isLeft ? 1 : -1;
+      group.position.set(sign * (TRACK_WIDTH + 0.5), 0, zPos);
+      return group;
+    };
+
+    // 1.5. Perspective Details (Dashed Lines & Expansion Joints)
+    const dashGeo = new THREE.PlaneGeometry(0.2, 2.0, 1, 4);
+    const dashMat = new THREE.MeshStandardMaterial({ 
+      color: '#ffffff', 
+      emissive: '#ffffff', 
+      emissiveIntensity: 2, 
+      roughness: 0.8 
+    });
+    applyCurvedWorld(dashMat);
+    dashGeo.rotateX(-Math.PI / 2);
+
+    const jointGeo = new THREE.BoxGeometry(TRACK_WIDTH * 2, 0.05, 0.2, 1, 1, 4);
+    const jointMat = new THREE.MeshStandardMaterial({ color: '#050505', metalness: 0.8, roughness: 0.2 });
+    applyCurvedWorld(jointMat);
+
+    for (let i = 0; i < 240; i++) {
+      const z = i * 4 - 800; // Dense spacing for continuous look
+      
+      const lRail = createGuardrail(true, z);
+      const rRail = createGuardrail(false, z);
+      curbsRef.current.push(lRail);
+      curbsRef.current.push(rRail);
+      if (envGroup.current) {
+        envGroup.current.add(lRail);
+        envGroup.current.add(rRail);
+      }
+
+      // Add dashed line every 8 meters (i % 2 === 0)
+      if (i % 2 === 0) {
+        const dash = new THREE.Mesh(dashGeo, dashMat);
+        dash.position.set(0, 0.51, z);
+        curbsRef.current.push(dash as any);
+        if (envGroup.current) envGroup.current.add(dash);
+      }
+
+      // Add expansion joint every 24 meters (i % 6 === 0)
+      if (i % 6 === 0) {
+        const joint = new THREE.Mesh(jointGeo, jointMat);
+        joint.position.set(0, 0.505, z);
+        curbsRef.current.push(joint as any);
+        if (envGroup.current) envGroup.current.add(joint);
+      }
     }
 
-    // 2. Dust particles (Speedlines/Wind effect)
-    const dustGeo = new THREE.BufferGeometry();
-    const dustCount = 1000;
-    const dustPos = new Float32Array(dustCount * 3);
-    for (let i = 0; i < dustCount * 3; i += 3) {
-      dustPos[i] = (Math.random() - 0.5) * 20; // x
-      dustPos[i + 1] = Math.random() * 5; // y
-      dustPos[i + 2] = (Math.random() - 0.5) * 100 - 50; // z
-    }
-    dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
-    const dustMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.05, transparent: true, opacity: 0.5 });
-    const dust = new THREE.Points(dustGeo, dustMat);
-    dustParticlesRef.current = dust;
-    if (envGroup.current) envGroup.current.add(dust);
+    // 2. Support Pillars
+    const pillarGeo = new THREE.BoxGeometry(TRACK_WIDTH * 2.5, 40, 2, 1, 1, 2);
+    const pillarMat = new THREE.MeshStandardMaterial({ color: '#050505', metalness: 0.5, roughness: 0.9 });
+    applyCurvedWorld(pillarMat);
 
-    // 3. Burnout Smoke
+    for (let i = 0; i < 12; i++) {
+      const pillar = new THREE.Mesh(pillarGeo, pillarMat) as any;
+      pillar.position.set(0, -20.5, i * 80 - 800); // 0.5 is thickness of road
+      curbsRef.current.push(pillar); // Recycle them like curbs
+      if (envGroup.current) envGroup.current.add(pillar);
+    }
+
+    // 3. Ambient Dust (Sparks/Air)
+    // REMOVED (User wanted clear visibility without white particles)
+
+    // 4. Burnout Smoke
     const smokeGeo = new THREE.SphereGeometry(0.5, 16, 16);
     const smokeMat = new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0 });
     for (let i = 0; i < 40; i++) {
-      const mesh = new THREE.Mesh(smokeGeo, smokeMat.clone()); // Clone material so we can fade individually
+      const mesh = new THREE.Mesh(smokeGeo, smokeMat.clone());
       mesh.userData = {
         life: Math.random(),
         speedY: Math.random() * 3 + 1,
@@ -256,56 +414,206 @@ export default function Scene() {
       if (garageGroup.current) garageGroup.current.add(mesh);
     }
 
-    // 4. Coins
-    const coinGeo = new THREE.CylinderGeometry(1.2, 1.2, 0.3, 16);
-    coinGeo.rotateX(Math.PI / 2); // Stand them up
+    // 5. Coins (Holographic Spin)
+    const coinGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.1, 32);
+    coinGeo.rotateX(Math.PI / 2);
     const coinMat = new THREE.MeshStandardMaterial({
-      color: 0xffd700,
-      metalness: 1,
-      roughness: 0.2,
-      emissive: 0xaa8800,
-      emissiveIntensity: 0.8
+      color: '#ffd700',
+      metalness: 0.2,
+      roughness: 0.1,
+      emissive: '#aa8800',
+      emissiveIntensity: 2.0
     });
+    applyCurvedWorld(coinMat);
 
     for (let i = 0; i < 10; i++) {
       const coin = new THREE.Mesh(coinGeo, coinMat);
       const rand = Math.random();
-      const laneX = rand < 0.33 ? -4.0 : (rand < 0.66 ? 0 : 4.0);
+      const laneX = rand < 0.33 ? -4.5 : (rand < 0.66 ? 0 : 4.5);
       coin.position.set(laneX, 1.2, -100 - (i * 80));
-      coin.userData = { collected: false };
+      coin.userData = { collected: false, baseZ: coin.position.z, startOffset: Math.random() * 10 };
       coinsRef.current.push(coin);
       if (envGroup.current) envGroup.current.add(coin);
     }
 
-    // 5. Obstacles
-    const obsGeo = new THREE.BoxGeometry(3.5, 2.5, 1.5); // Larger barricades
-    const obsMat = new THREE.MeshStandardMaterial({
-      color: 0xff0000,
-      metalness: 0.8,
-      roughness: 0.2,
-      emissive: 0xaa0000,
-      emissiveIntensity: 1.5
-    });
+    // 6. Premium Metallic Overpasses
+    const overpassGeo = new THREE.BoxGeometry(TRACK_WIDTH * 2.8, 1.5, 4);
+    const overpassRoofGeo = new THREE.BoxGeometry(TRACK_WIDTH * 2.9, 0.5, 3.5);
+    const overpassMat = new THREE.MeshStandardMaterial({ color: '#111', metalness: 0.9, roughness: 0.4 });
+    const opLegGeo = new THREE.BoxGeometry(1.5, 12, 4);
+    const opLedGeo = new THREE.BoxGeometry(TRACK_WIDTH * 2.85, 0.2, 4.1);
+    const opLedMat = new THREE.MeshStandardMaterial({ color: '#0088ff', emissive: '#0088ff', emissiveIntensity: 2 });
+    applyCurvedWorld(overpassMat);
+    applyCurvedWorld(opLedMat);
+
+    // Light pools under overpass
+    const poolGeo = new THREE.PlaneGeometry(TRACK_WIDTH * 2, 8);
+    const poolMat = new THREE.MeshBasicMaterial({ color: '#0088ff', transparent: true, opacity: 0.15, blending: THREE.AdditiveBlending });
+    poolGeo.rotateX(-Math.PI / 2);
+    applyCurvedWorld(poolMat);
+
+    for (let i = 0; i < 6; i++) {
+      const group = new THREE.Group() as any;
+      const opZ = (i * 160) - 800;
+
+      const bridge = new THREE.Mesh(overpassGeo, overpassMat);
+      bridge.position.y = 8;
+      const roof = new THREE.Mesh(overpassRoofGeo, overpassMat);
+      roof.position.y = 9;
+      
+      const legL = new THREE.Mesh(opLegGeo, overpassMat);
+      legL.position.set(-TRACK_WIDTH - 0.5, 4, 0);
+      const legR = new THREE.Mesh(opLegGeo, overpassMat);
+      legR.position.set(TRACK_WIDTH + 0.5, 4, 0);
+      const led = new THREE.Mesh(opLedGeo, opLedMat);
+      led.position.y = 8;
+
+      group.add(bridge);
+      group.add(roof);
+      group.add(legL);
+      group.add(legR);
+      group.add(led);
+
+      const pool = new THREE.Mesh(poolGeo, poolMat);
+      pool.position.y = 0.02;
+      group.add(pool);
+
+      group.position.set(0, 0, opZ);
+      curbsRef.current.push(group);
+      if (envGroup.current) envGroup.current.add(group);
+    }
+
+    // 6. Obstacles (Energy Crates)
+    const obsGeo = new THREE.BoxGeometry(3.5, 2.5, 1.5, 2, 2, 2);
+    const obsMat = new THREE.MeshStandardMaterial({ color: '#111', metalness: 0.8, roughness: 0.3 });
+    const xMat = new THREE.MeshBasicMaterial({ color: '#ff0000' });
+    applyCurvedWorld(obsMat);
+    applyCurvedWorld(xMat);
+
+    const createObstacle = (laneX: number, zPos: number) => {
+      const group = new THREE.Group() as any;
+      const crate = new THREE.Mesh(obsGeo, obsMat);
+      crate.position.y = 1.25;
+      group.add(crate);
+
+      const plane1 = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.3), xMat);
+      plane1.rotation.z = Math.PI / 4;
+      plane1.position.set(0, 1.25, 0.76);
+      group.add(plane1);
+      
+      const plane2 = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.3), xMat);
+      plane2.rotation.z = -Math.PI / 4;
+      plane2.position.set(0, 1.25, 0.76);
+      group.add(plane2);
+
+      group.position.set(laneX, 0, zPos);
+      return group;
+    };
 
     for (let i = 0; i < 5; i++) {
-      const obs = new THREE.Mesh(obsGeo, obsMat);
       const rand = Math.random();
-      const laneX = rand < 0.33 ? -4.0 : (rand < 0.66 ? 0 : 4.0);
-      obs.position.set(laneX, 1.25, -200 - (i * 250)); // Spaced far out (elevated to match new height)
+      const laneX = rand < 0.33 ? -4.5 : (rand < 0.66 ? 0 : 4.5);
+      const obs = createObstacle(laneX, -200 - (i * 250));
       obstaclesRef.current.push(obs);
       if (envGroup.current) envGroup.current.add(obs);
     }
 
+    // 7. Cityscape Background (Districts)
+    const buildingGeo = new THREE.BoxGeometry(1, 1, 1);
+    buildingGeo.translate(0, 0.5, 0); // Bottom center pivot
+    
+    const buildingMat = new THREE.MeshStandardMaterial({ 
+      color: '#010103', // Pitch black silhouette
+      roughness: 0.9,
+      metalness: 0.1,
+    }); 
+    const indMat = new THREE.MeshBasicMaterial({ color: '#ff1111' }); // Red beacon
+    
+    applyCurvedBuilding(buildingMat);
+    applyCurvedWorld(indMat);
+
+    const createComplexBuilding = (x: number, z: number, isCenter: boolean = false) => {
+      const g = new THREE.Group() as any;
+      g.position.set(x, 0, z);
+      
+      const h = (isCenter ? 150 : 80) + Math.random() * 250;
+      const w = 15 + Math.random() * 30;
+      const d = 15 + Math.random() * 30;
+
+      // Main Block
+      const b1 = new THREE.Mesh(buildingGeo, buildingMat);
+      b1.scale.set(w, h * 0.7, d);
+      g.add(b1);
+
+      // Setback / Top section
+      const b2 = new THREE.Mesh(buildingGeo, buildingMat);
+      b2.position.y = h * 0.7;
+      b2.scale.set(w * 0.6, h * 0.3, d * 0.6);
+      g.add(b2);
+
+      // Antenna or Beacon
+      if (Math.random() > 0.4) {
+        const beacon = new THREE.Mesh(buildingGeo, indMat);
+        beacon.position.y = h;
+        beacon.scale.set(w * 0.05, h * 0.02, w * 0.05);
+        g.add(beacon);
+      }
+
+      if (envGroup.current) envGroup.current.add(g);
+    };
+    
+    // Left District
+    for (let i = 0; i < 100; i++) {
+      createComplexBuilding(-30 - Math.random() * 80, -50 - Math.random() * 850);
+    }
+
+    // Right District
+    for (let i = 0; i < 100; i++) {
+      createComplexBuilding(30 + Math.random() * 80, -50 - Math.random() * 850);
+    }
+
+    // Center District (Distant Skyline)
+    for (let i = 0; i < 80; i++) {
+      createComplexBuilding((Math.random() - 0.5) * 300, -750 - Math.random() * 150, true);
+    }
+
     return () => {
-      curbGeo.dispose(); redCurbMat.dispose();
-      dustGeo.dispose(); dustMat.dispose();
+      railGeo.dispose(); railMat.dispose(); ledGeo.dispose(); ledMat.dispose();
+      dashGeo.dispose(); dashMat.dispose(); jointGeo.dispose(); jointMat.dispose();
+      overpassGeo.dispose(); overpassMat.dispose(); opLegGeo.dispose(); opLedGeo.dispose(); opLedMat.dispose();
+      poolGeo.dispose(); poolMat.dispose();
+      pillarGeo.dispose(); pillarMat.dispose();
       smokeGeo.dispose(); smokeMat.dispose();
       coinGeo.dispose(); coinMat.dispose();
-      obsGeo.dispose(); obsMat.dispose();
+      obsGeo.dispose(); obsMat.dispose(); xMat.dispose();
+      buildingGeo.dispose(); buildingMat.dispose(); indMat.dispose();
     };
   }, []);
 
+  const prevGameOverRef = useRef(false);
+
   useFrame((state, delta) => {
+    // Detect Game Restart Event
+    const currentGameOver = useTransitionStore.getState().isGameOver;
+    if (!currentGameOver && prevGameOverRef.current) {
+      // Game just restarted! Reset all obstacles and coins far away.
+      obstaclesRef.current.forEach((obs, i) => {
+        const rand = Math.random();
+        const laneX = rand < 0.33 ? -4.5 : (rand < 0.66 ? 0 : 4.5);
+        obs.position.set(laneX, 0, -200 - (i * 250));
+        obs.children.forEach(c => (c as THREE.Mesh).scale.setScalar(1));
+      });
+      coinsRef.current.forEach((coin, i) => {
+        const rand = Math.random();
+        const laneX = rand < 0.33 ? -4.5 : (rand < 0.66 ? 0 : 4.5);
+        coin.position.set(laneX, 1.2, -100 - (i * 80));
+        coin.scale.setScalar(1);
+        coin.visible = true;
+        coin.userData.collected = false;
+      });
+    }
+    prevGameOverRef.current = currentGameOver;
+
     // Ambient Dust float animation
     if (dustParticlesRef.current && (garageGroup.current?.scale.x ?? 0) > 0) {
       dustParticlesRef.current.rotation.y += delta * 0.05;
@@ -423,52 +731,57 @@ export default function Scene() {
       return; // Freeze game logic
     }
 
-    // Gradual Speed Increase Logic
+    // Gradual Speed Increase & Progression Logic
     const currentCoins = useTransitionStore.getState().coins;
     const isDevPaused = useTransitionStore.getState().isDevPaused;
     
-    const dynamicSpeed = Math.min(32 + (currentCoins * 0.8), 120); // Starts 30% slower, scale up
+    // Environmental Progression (0-100 clean, 100-300 dense fog, 300+ megacity)
+    // We adjust speed slightly and fog density based on score
+    const dynamicSpeed = Math.min(32 + (currentCoins * 0.8), 120); 
     const currentSpeed = dynamicSpeed * speedRamp * streakSpeedMultiplier;
     const moveZ = isDevPaused ? 0 : (currentSpeed * delta);
 
-    const elementAlpha = 1;
+    // Removed fog adaptation to keep infinite visibility
 
-    // Dust particle wind effect
-    if (dustParticlesRef.current) {
-      const positions = dustParticlesRef.current.geometry.attributes.position.array as Float32Array;
-      for (let i = 2; i < positions.length; i += 3) {
-        positions[i] += moveZ * 1.5; // Move dust faster than ground to simulate wind
-        if (positions[i] > 20) {
-          positions[i] = -150 - Math.random() * 100; // Reset far ahead
-        }
-      }
-      dustParticlesRef.current.geometry.attributes.position.needsUpdate = true;
-    }
+    // Removed elementAlpha as it was unused
 
-    // Animate Curbs
+    // Dust particle wind effect removed
+
+    // Animate Curbs (Guardrails)
     curbsRef.current.forEach((curb) => {
       curb.position.z += moveZ; // Scene moves to +Z
-      if (curb.position.z > 20) curb.position.z -= 300;
-      (curb.material as THREE.MeshBasicMaterial).opacity = elementAlpha;
-      (curb.material as THREE.MeshBasicMaterial).transparent = true;
+      if (curb.position.z > 20) curb.position.z -= 960; // 240 * 4 = 960 length
     });
 
     // Animate and Check Coins
     coinsRef.current.forEach((coin) => {
       coin.rotation.y += delta * 3; // Spin
-      coin.position.z += moveZ; // Coins move to +Z
-
+      
       if (!coin.userData.collected) {
+        coin.position.z += moveZ;
+        coin.position.y = 1.2 + Math.sin(state.clock.elapsedTime * 3 + coin.userData.startOffset) * 0.3; // Float
+
         // Collision Detection
-        // If they move towards +Z, and car is at Z=0. If they pass Z=0 going positive:
         if (coin.position.z > -2.0 && coin.position.z < 2.0) {
           if (carWrapper.current) {
             const distX = Math.abs(coin.position.x - carWrapper.current.position.x);
-            if (distX < 3.0) { // Hit box size increased
+            if (distX < 3.0) {
               incrementCoins();
               coin.userData.collected = true;
-              coin.visible = false;
             }
+          }
+        }
+      } else {
+        // Collection Animation (Spin & Shrink)
+        coin.position.z += moveZ * 0.5; // Slow down relative to world
+        coin.position.y += delta * 2; // Float up
+        coin.rotation.x += delta * 15; // Spin wildly
+        if (coin.scale.x > 0) {
+          const shrink = delta * 4;
+          const newScale = Math.max(0, coin.scale.x - shrink);
+          coin.scale.set(newScale, newScale, newScale);
+          if (newScale === 0) {
+            coin.visible = false;
           }
         }
       }
@@ -477,8 +790,9 @@ export default function Scene() {
       if (coin.position.z > 20) {
         coin.position.z -= (400 + Math.random() * 200); // Send far ahead (-Z)
         const rand = Math.random();
-        coin.position.x = rand < 0.33 ? -4.0 : (rand < 0.66 ? 0 : 4.0); // Wider lanes
+        coin.position.x = rand < 0.33 ? -4.5 : (rand < 0.66 ? 0 : 4.5);
         coin.userData.collected = false;
+        coin.scale.setScalar(1);
         coin.visible = true;
       }
     });
@@ -491,18 +805,30 @@ export default function Scene() {
       if (obs.position.z > -2.0 && obs.position.z < 2.0) {
         if (carWrapper.current) {
           const distX = Math.abs(obs.position.x - carWrapper.current.position.x);
-          if (distX < 2.5) { // Hit box size for larger barricade
+          if (distX < 2.5) {
             setGameOver();
+          } else if (distX < 4.0 && !obs.userData.nearMissTriggered) {
+            // Near Miss feedback
+            obs.userData.nearMissTriggered = true;
+            obs.scale.setScalar(1.2); // Pulse
+            const glowMat = (obs.children[1] as THREE.Mesh).material as THREE.MeshBasicMaterial;
+            if (glowMat) glowMat.color.setHex(0xffffff); // Flash white
           }
         }
       }
 
-      // Recycle Obstacle (Frequency increases as coins increase)
+      // Recover near miss pulse
+      if (obs.userData.nearMissTriggered) {
+        obs.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
+        const glowMat = (obs.children[1] as THREE.Mesh).material as THREE.MeshBasicMaterial;
+        if (glowMat) glowMat.color.lerp(new THREE.Color(0xff0000), 0.1); // Back to red
+      }
+
+      // Recycle Obstacle
       if (obs.position.z > 20) {
         const currentCoins = useTransitionStore.getState().coins;
-        const baseRecycleDist = Math.max(200, 800 - (currentCoins * 30)); // Distance decreases as coins go up, min 200
+        const baseRecycleDist = Math.max(200, 800 - (currentCoins * 30));
         
-        // Find the furthest obstacle ahead to prevent side-by-side unpassable blocks
         let furthestZ = 0;
         obstaclesRef.current.forEach((o) => {
           if (o !== obs && o.position.z < furthestZ) furthestZ = o.position.z;
@@ -510,13 +836,14 @@ export default function Scene() {
         
         obs.position.z = furthestZ - (baseRecycleDist + Math.random() * 200);
         const rand = Math.random();
-        obs.position.x = rand < 0.33 ? -4.0 : (rand < 0.66 ? 0 : 4.0);
+        obs.position.x = rand < 0.33 ? -4.5 : (rand < 0.66 ? 0 : 4.5);
+        obs.userData.nearMissTriggered = false;
+        obs.scale.setScalar(1);
       }
     });
 
     // Only apply interactive steering and camera if the intro sequence is finished
     if (!isIntroSequenceRunning.current && hasStartedGame) {
-      // Car Parallax (Highly responsive F1 cornering feel)
       if (carWrapper.current) {
         if (isDevPaused) {
           // Dev Tuning Mode Override
@@ -524,46 +851,83 @@ export default function Scene() {
           const currentScale = useTransitionStore.getState().customScale;
           const currentX = useTransitionStore.getState().customX;
           const currentY = useTransitionStore.getState().customY;
-          
           carWrapper.current.rotation.set(currentTilt, 0, 0);
           carWrapper.current.position.set(currentX, currentY, 0);
           carWrapper.current.scale.set(currentScale, currentScale, currentScale);
         } else {
-          // Steering physics: Nose turns first, body follows
-          const targetRotY = pointer.x * -0.45;
-          const targetPosX = pointer.x * 4.5;
+          // Determine active pointer
+          let activePointerX = pointer.x;
 
+          if (useTransitionStore.getState().controlMode === 'keyboard') {
+            const targetVirtual = (rightPressed.current ? 1 : 0) - (leftPressed.current ? 1 : 0);
+            virtualPointer.current = THREE.MathUtils.lerp(virtualPointer.current, targetVirtual, 0.1);
+            activePointerX = virtualPointer.current;
+          }
+
+          // Steering physics: Nose turns first, body follows
+          const targetRotY = activePointerX * -0.45;
+          const targetPosX = activePointerX * 4.5;
           const steeringLerp = 0.35;
           const movementLerp = 0.25;
-
           const currentScale = useTransitionStore.getState().customScale;
           const currentTilt = useTransitionStore.getState().customTilt;
 
           carWrapper.current.rotation.y = THREE.MathUtils.lerp(carWrapper.current.rotation.y, targetRotY, steeringLerp);
-          carWrapper.current.rotation.x = currentTilt; // Tilted based on dev UI manager
+          carWrapper.current.rotation.x = currentTilt;
           carWrapper.current.rotation.z = 0;
 
           carWrapper.current.position.x = THREE.MathUtils.lerp(carWrapper.current.position.x, targetPosX, movementLerp);
-          carWrapper.current.position.y = THREE.MathUtils.lerp(carWrapper.current.position.y, 0, movementLerp); // Keep flat
+          // Suspension/Engine Vibration
+          const engineVibration = Math.sin(state.clock.elapsedTime * 80) * 0.015;
+          carWrapper.current.position.y = THREE.MathUtils.lerp(carWrapper.current.position.y, engineVibration, movementLerp);
           
           carWrapper.current.scale.set(currentScale, currentScale, currentScale);
+
+          // Road Banking
+          if (envGroup.current) {
+            const targetBank = activePointerX * 0.12; // ~6.8 degrees
+            envGroup.current.rotation.z = THREE.MathUtils.lerp(envGroup.current.rotation.z, targetBank, 0.1);
+          }
         }
       }
 
-      // Camera position (ties slightly to mouse for global responsiveness)
-      const baseCameraY = 2.4; // Elevated racing view
-
-      // Camera shifts based on mouse to change viewing angle
-      const targetCameraX = pointer.x * -1.5;
-      const targetCameraY = baseCameraY + pointer.y * 0.6;
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetCameraX, 0.05);
-      camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCameraY, 0.05);
+      // Camera Lag & Dynamics
+      const baseCameraY = 2.1;
       
-      // Pull back to racing distance (4.5) smoothly after the intro's 3.2 close-up
-      camera.position.z = THREE.MathUtils.lerp(camera.position.z, 4.5, 0.02);
+      let activeCamPointerX = pointer.x;
+      let activeCamPointerY = pointer.y;
+      if (useTransitionStore.getState().controlMode === 'keyboard') {
+        activeCamPointerX = virtualPointer.current;
+        activeCamPointerY = 0;
+      }
 
-      // Horizon target (looking sharply down)
-      const lookTargetY = 0.0 - (pointer.y * 0.2);
+      const targetCameraX = activeCamPointerX * -1.5;
+      const targetCameraY = baseCameraY + activeCamPointerY * 0.6;
+      
+      // Speed Shake
+      const speedShakeX = Math.sin(state.clock.elapsedTime * 60) * 0.002 * (speedRamp + 0.1);
+      const speedShakeY = Math.cos(state.clock.elapsedTime * 65) * 0.002 * (speedRamp + 0.1);
+
+      // Camera Lag: 0.05s delay lerp
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetCameraX + speedShakeX, 0.08);
+      camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCameraY + speedShakeY, 0.08);
+      
+      // Dynamic FOV
+      const targetFOV = 55 + (speedRamp * 10);
+      const pCamera = camera as THREE.PerspectiveCamera;
+      if (pCamera.fov !== undefined) {
+        pCamera.fov = THREE.MathUtils.lerp(pCamera.fov, targetFOV, 0.05);
+        pCamera.updateProjectionMatrix();
+      }
+
+      // Drop camera slightly closer for larger car presence (3.8 instead of 4.5)
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, 3.8, 0.02);
+
+      // Mouse Lean (Roll)
+      const targetCameraRoll = activeCamPointerX * -0.052; // ~3 degrees
+      camera.rotation.z = THREE.MathUtils.lerp(camera.rotation.z, targetCameraRoll, 0.1);
+
+      const lookTargetY = 0.0 - (activeCamPointerY * 0.2);
       const lookTarget = new THREE.Vector3(0, lookTargetY, -10);
       camera.lookAt(lookTarget);
     }
@@ -571,17 +935,20 @@ export default function Scene() {
 
   return (
     <>
-      <color attach="background" args={['#020202']} />
-      <fog attach="fog" args={['#020202', 5, 40]} />
+      <color attach="background" args={['#010205']} />
+      <fog attach="fog" args={['#010205', 200, 800]} />
+      
+      {/* Pushed stars far back so they render behind the massive skyscrapers */}
+      <Stars radius={400} depth={200} count={3000} factor={10} saturation={0} fade speed={1} />
 
-      {/* LIGHTING */}
+      {/* RIM LIGHTING & ATMOSPHERE */}
       <spotLight ref={sweepLightRef} angle={0.2} penumbra={0.5} distance={10} color="#ffffff" />
       <directionalLight ref={sunlightRef} position={[0, 5, -20]} intensity={0} color="#ffffff" />
 
-      {/* Studio lighting setup for liquid chrome reflections */}
-      <directionalLight ref={dirLight1} position={[5, 5, 5]} intensity={2.5} color="#ffffff" />
-      <directionalLight ref={dirLight2} position={[-5, 5, 5]} intensity={1.5} color="#ffffff" />
-      <spotLight ref={spotLightRef} position={[0, 10, 0]} intensity={4} angle={0.5} penumbra={1} color="#ffffff" />
+      {/* Cyberpunk F1 Rim Lights - Widened to prevent tire blobs */}
+      <pointLight position={[-12, 3, -2]} color="#0088ff" intensity={3} distance={25} />
+      <pointLight position={[12, 3, -2]} color="#ff0044" intensity={3} distance={25} />
+      <pointLight position={[0, 2, 8]} color="#ffffff" intensity={1} distance={15} />
 
       <group ref={carWrapper}>
         <group 
@@ -626,38 +993,39 @@ export default function Scene() {
         {/* Removed Red Slash */}
       </group>
 
-      {/* ENVIRONMENT (Pure void with crisp reflections) */}
-      {/* Ground Reflection matching reference - Now permanently visible */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={!hasStartedGame ? [0, -0.20, 0] : [0, 0, 0]}>
-        <planeGeometry args={[100, 200]} />
-        <MeshReflectorMaterial
-          blur={[300, 100]}
-          resolution={1024}
-          mixBlur={1}
-          mixStrength={100}
-          roughness={0.2}
-          depthScale={1.2}
-          minDepthThreshold={0.4}
-          maxDepthThreshold={1.4}
-          color="#0a0a0a"
-          metalness={0.9}
-          mirror={1}
-        />
-      </mesh>
-
-      {/* Track Curbs (Hidden during initial garage sequence) */}
       <group ref={envGroup}>
+        {/* Ground Reflection - Carbon Fiber Wet Asphalt via MeshPhysicalMaterial */}
+        <mesh 
+          rotation={[-Math.PI / 2, 0, 0]} 
+          position={!hasStartedGame ? [0, -0.20, 0] : [0, 0, 0]}
+        >
+          <boxGeometry args={[40, 400, 1, 1, 100, 1]} />
+          <meshPhysicalMaterial
+            color="#121212"
+            roughness={0.28}
+            metalness={0.12}
+            clearcoat={0.9}
+            clearcoatRoughness={0.15}
+            envMapIntensity={1.2}
+            bumpMap={noiseTex}
+            bumpScale={0.01}
+            roughnessMap={noiseTex}
+            onBeforeCompile={(shader) => {
+              injectCurvedWorld(shader);
+            }}
+          />
+        </mesh>
       </group>
 
-      <Environment preset="studio" environmentIntensity={0.3} />
+      <Environment preset="studio" environmentIntensity={0.1} />
 
       {/* Cinematic Velocity Post-Processing */}
       <EffectComposer multisampling={0}>
         <Bloom
-          luminanceThreshold={0.8}
-          luminanceSmoothing={0.9}
+          luminanceThreshold={0.95}
+          luminanceSmoothing={0.1}
           height={300}
-          intensity={0.4}
+          intensity={0.8}
         />
         <ChromaticAberration
           blendFunction={BlendFunction.NORMAL}
