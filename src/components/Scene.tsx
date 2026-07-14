@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Environment, OrbitControls, Stars } from '@react-three/drei';
+import { Environment, OrbitControls, Stars, PerformanceMonitor } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing';
 import { applyCurvedWorld, injectCurvedWorld } from '../utils/shaders';
 import { BlendFunction } from 'postprocessing';
@@ -44,6 +44,7 @@ export default function Scene() {
 
   const [speedRamp, setSpeedRamp] = useState(0);
   const [orbitActive, setOrbitActive] = useState(false);
+  const [enablePostProcessing, setEnablePostProcessing] = useState(true);
   const initialSlideRef = useRef(30); // Start 30 units deep in the background
 
   // Keyboard controls state
@@ -943,7 +944,12 @@ export default function Scene() {
 
       {/* RIM LIGHTING & ATMOSPHERE */}
       <spotLight ref={sweepLightRef} angle={0.2} penumbra={0.5} distance={10} color="#ffffff" />
+      <spotLight ref={spotLightRef} position={[0, 5, 5]} angle={0.6} penumbra={0.8} distance={25} color="#ffffff" />
       <directionalLight ref={sunlightRef} position={[0, 5, -20]} intensity={0} color="#ffffff" />
+      
+      {/* Hero Reveal Lights (Used in intro timeline and dashboard) */}
+      <directionalLight ref={dirLight1} position={[5, 5, 5]} />
+      <directionalLight ref={dirLight2} position={[-5, 5, 5]} />
 
       {/* Cyberpunk F1 Rim Lights - Widened to prevent tire blobs */}
       <pointLight position={[-12, 3, -2]} color="#0088ff" intensity={3} distance={25} />
@@ -1017,24 +1023,28 @@ export default function Scene() {
         </mesh>
       </group>
 
-      <Environment preset="studio" environmentIntensity={0.1} />
+      <Environment preset="studio" environmentIntensity={!hasStartedGame ? 0.8 : 0.1} />
+
+      <PerformanceMonitor onDecline={() => setEnablePostProcessing(false)} />
 
       {/* Cinematic Velocity Post-Processing */}
-      <EffectComposer multisampling={0}>
-        <Bloom
-          luminanceThreshold={0.95}
-          luminanceSmoothing={0.1}
-          height={300}
-          intensity={0.8}
-        />
-        <ChromaticAberration
-          blendFunction={BlendFunction.NORMAL}
-          offset={new THREE.Vector2(0.0008 * streakSpeedMultiplier, 0.0008 * streakSpeedMultiplier)}
-          radialModulation={true}
-          modulationOffset={0.5}
-        />
-        <Vignette eskil={false} offset={0.5} darkness={0.9} />
-      </EffectComposer>
+      {enablePostProcessing && (
+        <EffectComposer multisampling={0}>
+          <Bloom
+            luminanceThreshold={0.95}
+            luminanceSmoothing={0.1}
+            height={300}
+            intensity={0.8}
+          />
+          <ChromaticAberration
+            blendFunction={BlendFunction.NORMAL}
+            offset={new THREE.Vector2(0.0008 * streakSpeedMultiplier, 0.0008 * streakSpeedMultiplier)}
+            radialModulation={true}
+            modulationOffset={0.5}
+          />
+          <Vignette eskil={false} offset={0.5} darkness={0.9} />
+        </EffectComposer>
+      )}
     </>
   );
 }

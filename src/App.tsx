@@ -1,10 +1,14 @@
+import React, { Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { motion } from 'framer-motion';
 
 import IntroSequence from './components/IntroSequence';
 import UIOverlay from './components/UIOverlay';
-import Scene from './components/Scene';
 import Dashboard from './components/Dashboard';
+import ErrorBoundary from './components/ErrorBoundary';
+
+const Scene = React.lazy(() => import('./components/Scene'));
+
 
 import { useTransitionStore } from './store/useTransitionStore';
 
@@ -27,14 +31,18 @@ export default function App() {
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         className="fixed top-0 left-0 w-full z-0 overflow-hidden"
       >
-        <Canvas
-          camera={{ position: [0, 1.8, 20], fov: 80 }}
-          dpr={[1, 2]}
-          gl={{ antialias: true }}
-          style={{ opacity: 1 }}
-        >
-          <Scene />
-        </Canvas>
+        <ErrorBoundary>
+          <Canvas
+            camera={{ position: [0, 1.8, 20], fov: 80 }}
+            dpr={[1, 2]}
+            gl={{ antialias: true }}
+            style={{ opacity: 1 }}
+          >
+            <Suspense fallback={null}>
+              <Scene />
+            </Suspense>
+          </Canvas>
+        </ErrorBoundary>
       </motion.div>
 
       {/* Coin Counter HUD */}

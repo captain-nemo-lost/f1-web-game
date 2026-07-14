@@ -12,9 +12,14 @@ export default function FormulaCar() {
   const brakeLightsActive = useTransitionStore((state) => state.brakeLightsActive);
   const streakSpeedMultiplier = useTransitionStore((state) => state.streakSpeedMultiplier);
   const hasStartedGame = useTransitionStore((state) => state.hasStartedGame);
+  const isGarageOpen = useTransitionStore((state) => state.isGarageOpen);
 
   // Load the provided GLB model
   const { scene } = useGLTF('/aston_martin_f1_amr23_2023.glb');
+
+  // If in garage, face sideways (-90 deg), otherwise face backward (-0.04 tilt, Math.PI rotation)
+  const garageRotationY = -Math.PI / 2;
+  const currentRotation = [-0.04, isGarageOpen ? garageRotationY : Math.PI, 0];
 
   // Enhance existing materials instead of overriding them
   useEffect(() => {
@@ -84,9 +89,26 @@ export default function FormulaCar() {
       <primitive 
         object={scene} 
         scale={1.8} 
-        rotation={[-0.04, Math.PI, 0]} // Tilted nose up slightly
+        rotation={currentRotation as [number, number, number]} 
         position={[0, 0, 0]} 
       />
+
+      {/* Cinematic Garage Platform - Only visible in Garage mode */}
+      {isGarageOpen && (
+        <group position={[0, -0.05, 0]}>
+          {/* Main Dark Circular Platform */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[4, 4, 0.1, 64]} />
+            <meshStandardMaterial color="#050505" roughness={0.2} metalness={0.8} />
+          </mesh>
+          {/* Glowing Red Neon Ring */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
+            <ringGeometry args={[3.8, 4.0, 64]} />
+            <meshBasicMaterial color="#E10600" />
+          </mesh>
+          <pointLight color="#E10600" intensity={0.5} distance={5} position={[0, 0.5, 0]} />
+        </group>
+      )}
 
       {/* EXHAUST GLOW (Fixed position behind the car, may need Y/Z adjustment based on model size) */}
       <pointLight color="#ff4400" intensity={8} distance={4} position={[0, 0.4, 2.5]} />

@@ -18,6 +18,8 @@ export interface TransitionStore {
   customY: number;
   isDevPaused: boolean;
   controlMode: 'mouse' | 'keyboard';
+  isGarageOpen: boolean;
+  setGarageOpen: (val: boolean) => void;
   setControlMode: (mode: 'mouse' | 'keyboard') => void;
   setSceneLoaded: () => void;
   setInspectMode: () => void;
@@ -52,6 +54,7 @@ export const useTransitionStore = create<TransitionStore>((set) => ({
 
   isInspectMode: false,
   controlMode: 'mouse',
+  isGarageOpen: false,
   customTilt: -0.01,
   customScale: 1.29,
   customX: 0,
@@ -60,6 +63,7 @@ export const useTransitionStore = create<TransitionStore>((set) => ({
 
   setInspectMode: () => set({ isInspectMode: true }),
   exitInspectMode: () => set({ isInspectMode: false }),
+  setGarageOpen: (val) => set({ isGarageOpen: val }),
   setControlMode: (mode) => set({ controlMode: mode }),
   setCustomTilt: (val) => set({ customTilt: val }),
   setCustomScale: (val) => set({ customScale: val }),
