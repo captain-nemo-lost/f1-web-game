@@ -14,8 +14,7 @@ export default function Dashboard() {
   
   const controlMode = useTransitionStore((state) => state.controlMode);
   const setControlMode = useTransitionStore((state) => state.setControlMode);
-  const isGarageOpen = useTransitionStore((state) => state.isGarageOpen);
-  const setGarageOpen = useTransitionStore((state) => state.setGarageOpen);
+  const setInspectMode = useTransitionStore((state) => state.setInspectMode);
   const [showControlsMenu, setShowControlsMenu] = useState(false);
   const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
@@ -44,8 +43,8 @@ export default function Dashboard() {
           {/* Overlay Gradient for readability */}
           <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/40 to-transparent" />
 
-          {/* Top Bar - Hidden when Garage is open */}
-          <div className={`absolute top-8 left-8 md:top-12 md:left-12 flex justify-between w-[calc(100%-4rem)] md:w-[calc(100%-6rem)] transition-opacity duration-500 ${isGarageOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+          {/* Top Bar */}
+          <div className={`absolute top-8 left-8 md:top-12 md:left-12 flex justify-between w-[calc(100%-4rem)] md:w-[calc(100%-6rem)] transition-opacity duration-500 ${isInspectMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             <div className="flex items-center gap-3 px-4 py-2 bg-black/50 border border-white/10 rounded-md backdrop-blur-md">
               <div className="flex gap-1 text-[#E10600]">
                 <div className="w-2 h-4 bg-current transform -skew-x-12" />
@@ -69,7 +68,7 @@ export default function Dashboard() {
           </div>
 
           {/* Main Content (Left Aligned) */}
-          <div className={`absolute top-1/2 -translate-y-1/2 left-8 md:left-24 flex flex-col pointer-events-auto transition-opacity duration-500 ${isInspectMode || isGarageOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+          <div className={`absolute top-1/2 -translate-y-1/2 left-8 md:left-24 flex flex-col pointer-events-auto transition-opacity duration-500 ${isInspectMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             
             {/* Title Block */}
             <div className="mb-6 relative">
@@ -134,7 +133,7 @@ export default function Dashboard() {
                   <span className="text-[10px] font-bold text-white/50 group-hover:text-white uppercase tracking-wider">How to Play</span>
                 </button>
                 <button 
-                  onClick={() => setGarageOpen(true)}
+                  onClick={() => setInspectMode()}
                   className="flex flex-col items-center justify-center gap-2 p-3 bg-black/40 border border-white/10 hover:border-white/30 rounded-md transition-colors group"
                 >
                   <Trophy className="w-5 h-5 text-white/50 group-hover:text-white" />
@@ -352,84 +351,10 @@ export default function Dashboard() {
             )}
           </AnimatePresence>
 
-          {/* Garage UI Overlay - Matches Reference Design */}
-          <AnimatePresence>
-            {isGarageOpen && (
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 z-50 pointer-events-auto flex flex-col justify-between p-6 md:p-10"
-              >
 
-
-                {/* Main Content Area */}
-                <div className="flex-1 flex flex-col justify-between relative mt-12">
-                  
-                  {/* Title Block (Middle Left) */}
-                  <div className="absolute top-0 left-0">
-                    <h2 className="text-5xl md:text-6xl font-black text-white tracking-widest uppercase italic">GARAGE</h2>
-                    <p className="text-white/50 font-bold tracking-[0.2em] uppercase text-xs mt-1">Choose Your Machine</p>
-                    <div className="w-6 h-[2px] bg-[#E10600] mt-4" />
-                  </div>
-
-                  {/* Floating Navigation Arrows - Removed since there is only 1 car */}
-                  
-                  <div className="flex-1" /> {/* Spacer to push bottom section down */}
-
-                  {/* Bottom Section */}
-                  <div className="flex flex-col items-center w-full gap-6">
-                    
-                    {/* Car Selection Carousel */}
-                    <div className="flex gap-2 w-full justify-center overflow-x-auto pb-4">
-                      {/* AMR23 Card */}
-                      <div 
-                        className="min-w-[160px] h-20 bg-gradient-to-b from-black/60 to-black border border-[#E10600] rounded-sm relative flex flex-col items-center justify-end pb-2 cursor-pointer shadow-[0_0_15px_rgba(225,6,0,0.2)]"
-                      >
-                        <span className="text-[#E10600] font-bold uppercase tracking-widest text-[10px] mt-auto">AMR23</span>
-                      </div>
-
-                      {/* Locked Slots */}
-                      <div className="min-w-[160px] h-20 bg-black/40 border border-white/5 rounded-sm flex flex-col items-center justify-center opacity-30">
-                        <span className="text-white/30 font-bold uppercase tracking-widest text-[10px]">Locked</span>
-                      </div>
-                      <div className="min-w-[160px] h-20 bg-black/40 border border-white/5 rounded-sm flex flex-col items-center justify-center opacity-30 hidden md:flex">
-                        <span className="text-white/30 font-bold uppercase tracking-widest text-[10px]">Locked</span>
-                      </div>
-                    </div>
-
-                    {/* Action Bar */}
-                    <div className="w-full flex justify-between items-center mt-4">
-                      <button 
-                        onClick={() => setGarageOpen(false)}
-                        className="px-6 py-2 flex items-center gap-2 bg-[#0a0a0a] border border-white/10 text-white font-bold tracking-widest uppercase text-xs rounded hover:bg-white/5 transition-colors"
-                      >
-                        <ChevronRight className="w-4 h-4 rotate-180" />
-                        Back
-                      </button>
-                      
-                      <button 
-                        onClick={() => {
-                          setGarageOpen(false);
-                        }}
-                        className="px-12 py-3 flex items-center gap-4 bg-[#E10600] text-white font-bold tracking-widest uppercase text-sm rounded shadow-[0_0_20px_rgba(225,6,0,0.4)] hover:bg-white hover:text-[#E10600] transition-colors"
-                      >
-                        Select Car
-                        <div className="flex -space-x-2">
-                          <ChevronRight className="w-4 h-4" />
-                          <ChevronRight className="w-4 h-4" />
-                        </div>
-                      </button>
-                    </div>
-
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
 
           {/* Footer Bar */}
-          <div className={`absolute bottom-8 left-8 md:bottom-12 md:left-12 flex justify-between items-center w-[calc(100%-4rem)] md:w-[calc(100%-6rem)] transition-opacity duration-500 ${isInspectMode || isGarageOpen ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}>
+          <div className={`absolute bottom-8 left-8 md:bottom-12 md:left-12 flex justify-between items-center w-[calc(100%-4rem)] md:w-[calc(100%-6rem)] transition-opacity duration-500 ${isInspectMode ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}>
             <button 
               onClick={() => setShowCredits(true)}
               className="text-white/40 hover:text-[#E10600] text-[10px] font-bold tracking-widest uppercase transition-colors"
