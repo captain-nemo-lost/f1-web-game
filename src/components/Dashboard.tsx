@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTransitionStore } from '../store/useTransitionStore';
 import { Trophy, HelpCircle, ChevronRight, Flag, Gamepad2, Mouse, Keyboard, X } from 'lucide-react';
+import { useProgress } from '@react-three/drei';
 
 export default function Dashboard() {
   const isSceneLoaded = useTransitionStore((state) => state.isSceneLoaded);
@@ -19,13 +20,26 @@ export default function Dashboard() {
   const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
 
+  const { progress } = useProgress();
+
   // If the scene isn't loaded yet, show a simple loading state
   if (!isSceneLoaded) {
     return (
       <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#080808]">
-        <div className="flex flex-col items-center">
-          <div className="w-16 h-16 border-4 border-red-600/20 border-t-red-600 rounded-full animate-spin mb-4" />
-          <p className="text-white/50 uppercase tracking-[0.3em] font-bold text-sm">Loading Engine...</p>
+        <div className="flex flex-col items-center w-64">
+          <div className="w-16 h-16 border-4 border-red-600/20 border-t-red-600 rounded-full animate-spin mb-6" />
+          
+          <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden mb-2">
+            <div 
+              className="h-full bg-[#E10600] transition-all duration-300 ease-out" 
+              style={{ width: `${progress}%` }} 
+            />
+          </div>
+          
+          <div className="flex justify-between w-full text-white/50 text-[10px] font-bold tracking-[0.2em] uppercase">
+            <span>Loading Engine</span>
+            <span>{Math.round(progress)}%</span>
+          </div>
         </div>
       </div>
     );
